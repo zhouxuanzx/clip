@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Clip</string>
+
+    <string name="sync_channel_name">同步连接</string>
+    <string name="sync_channel_desc">保持与电脑的局域网连接</string>
+    <string name="sync_connected">已连上「%1$s」</string>
+    <string name="sync_connecting">正在连接电脑…</string>
+    <string name="sync_idle">未连接</string>
+    <string name="sync_stop">断开</string>
+</resources>

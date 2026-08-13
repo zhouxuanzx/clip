@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 界面是 Compose 写的，XML 主题只负责启动窗口和扫码页 -->
+    <style name="Theme.Clip" parent="Theme.Material3.DayNight.NoActionBar" />
+
+    <!-- 分享入口不显示界面，弹个 Toast 就结束 -->
+    <style name="Theme.Clip.Invisible" parent="Theme.Clip">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>

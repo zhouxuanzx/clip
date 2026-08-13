@@ -1,0 +1,37 @@
+appId: com.zhouxuan.clip
+productName: Clip
+directories:
+  output: dist
+  buildResources: build
+
+# 默认会打进几十种语言包（locales 约 47MB），实际只用中/英，裁剪掉能明显减小体积
+electronLanguages:
+  - en-US
+  - zh-CN
+
+files:
+  - out/**
+  - package.json
+  - '!**/{.eslintrc,.prettierrc,tsconfig*.json,electron-builder.yml,electron.vite.config.ts}'
+
+# 原生模块不能被打进 asar，否则加载不了 .node 二进制
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - node_modules/bindings/**
+  - node_modules/koffi/**
+  - node_modules/robotjs/**
+
+# better-sqlite3 v13 / koffi / robotjs 都自带 N-API 预编译二进制，
+# 关掉 rebuild 才不会要求本机装 Visual Studio Build Tools
+npmRebuild: false
+
+win:
+  # 跳过代码签名（无证书时 signtool 会卡死），但保留图标/元数据写入
+  signExecutable: false
+  target:
+    - target: portable
+    - target: zip
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

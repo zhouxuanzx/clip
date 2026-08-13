@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clip 剪贴板管理器 · 设计稿</title>
+<style>
+  :root{
+    /* 共享品牌色 */
+    --accent:#5b6ef5;
+    --accent-2:#7c8bff;
+    --accent-soft:rgba(91,110,245,.16);
+    /* 桌面端（深色，工具类应用） */
+    --d-bg:#0e1014;
+    --d-surface:#161922;
+    --d-surface-2:#1d212c;
+    --d-hover:#232838;
+    --d-border:rgba(255,255,255,.08);
+    --d-text:#e7e9ee;
+    --d-muted:#8b90a0;
+    --green:#34d399;
+    --amber:#fbbf24;
+    --red:#f87171;
+    /* 安卓端（浅色 Material 3） */
+    --a-bg:#f5f6fb;
+    --a-surface:#ffffff;
+    --a-surface-2:#eef0f6;
+    --a-border:rgba(15,18,30,.08);
+    --a-text:#1a1c22;
+    --a-muted:#6b7280;
+    --a-shadow:0 2px 8px rgba(20,24,40,.08),0 1px 2px rgba(20,24,40,.06);
+    --radius:14px;
+    font-synthesis:none;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0b0d11;color:#e7e9ee;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 80px}
+  .doc-header h1{font-size:26px;margin:0 0 6px;font-weight:700;letter-spacing:.3px}
+  .doc-header .sub{color:#9aa0b0;font-size:14px;margin:0 0 18px}
+  .pill{display:inline-block;background:var(--accent-soft);color:var(--accent-2);border-radius:999px;padding:3px 11px;font-size:12px;margin:0 6px 6px 0;font-weight:600}
+  .notes{background:#12151c;border:1px solid var(--d-border);border-radius:12px;padding:16px 20px;margin:18px 0 8px;font-size:13.5px;color:#c4c9d6}
+  .notes b{color:#fff}
+  .notes ul{margin:8px 0 0;padding-left:20px}
+  .notes li{margin:3px 0}
+
+  .tokens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:22px 0 6px}
+  .token{background:#12151c;border:1px solid var(--d-border);border-radius:10px;padding:12px;font-size:12px}
+  .token .sw{height:40px;border-radius:7px;margin-bottom:8px;border:1px solid rgba(255,255,255,.06)}
+  .token .nm{color:#fff;font-weight:600}
+  .token .vl{color:#8b90a0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .platform{margin-top:46px}
+  .platform h2{font-size:20px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  .platform h2 .tag{font-size:12px;font-weight:600;color:var(--accent-2);background:var(--accent-soft);padding:3px 10px;border-radius:999px}
+  .platform .desc{color:#9aa0b0;font-size:13.5px;margin:0 0 18px}
+
+  .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+  .tab{cursor:pointer;border:1px solid var(--d-border);background:#12151c;color:#aab0c0;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;transition:.15s}
+  .tab:hover{color:#fff;border-color:#39405a}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  .stage{background:repeating-linear-gradient(45deg,#0c0e13,#0c0e13 14px,#0e1015 14px,#0e1015 28px);border:1px solid var(--d-border);border-radius:18px;padding:34px;display:flex;justify-content:center;overflow:auto}
+  .stage.phone-stage{background:#11131a}
+  .screen{display:none}
+  .screen.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* ============ 桌面端窗口 ============ */
+  .win{width:1000px;height:620px;background:var(--d-bg);border:1px solid var(--d-border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  .titlebar{height:38px;flex:0 0 38px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--d-border);background:#10131a}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .titlebar .t{margin-left:8px;color:#c4c9d6;font-size:13px;font-weight:600}
+  .titlebar .hk{margin-left:auto;color:#6b7080;font-size:12px}
+  .win-body{flex:1;display:flex;min-height:0}
+
+  .sidebar{width:200px;flex:0 0 200px;background:var(--d-surface);border-right:1px solid var(--d-border);display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:9px;padding:14px 14px 12px}
+  .brand .logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+  .brand .nm{font-weight:700;font-size:14px}
+  .brand .dv{font-size:11px;color:var(--d-muted)}
+  .nav{flex:1;overflow:auto;padding:4px 8px}
+  .nav-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;color:#c4c9d6;font-size:13.5px;margin-bottom:2px}
+  .nav-item:hover{background:var(--d-hover)}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent-2);font-weight:600}
+  .nav-item .ico{width:16px;height:16px;flex:0 0 16px;opacity:.85}
+  .nav-item .badge{margin-left:auto;background:var(--d-surface-2);color:var(--d-muted);font-size:11px;border-radius:999px;padding:1px 7px;min-width:20px;text-align:center}
+  .nav-item.active .badge{background:rgba(91,110,245,.22);color:var(--accent-2)}
+  .nav-new{margin:6px 4px 10px;padding:8px 10px;border:1px dashed var(--d-border);border-radius:8px;color:var(--d-muted);font-size:13px;text-align:center;cursor:pointer}
+  .nav-new:hover{border-color:var(--accent);color:var(--accent-2)}
+  .side-foot{display:flex;border-top:1px solid var(--d-border)}
+  .side-foot button{flex:1;background:none;border:none;border-right:1px solid var(--d-border);color:var(--d-muted);padding:11px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px}
+  .side-foot button:last-child{border-right:none}
+  .side-foot button:hover{background:var(--d-hover);color:var(--d-text)}
+  .side-foot .on-dot{width:7px;height:7px;border-radius:50%;background:var(--green);position:absolute;margin:14px 0 0 14px}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .toolbar{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--d-border);background:var(--d-bg)}
+  .search{flex:1;display:flex;align-items:center;gap:8px;background:var(--d-surface);border:1px solid var(--d-border);border-radius:8px;padding:7px 11px;color:var(--d-muted);font-size:13px}
+  .search input{flex:1;background:none;border:none;outline:none;color:var(--d-text);font-size:13px}
+  .search input::placeholder{color:var(--d-muted)}
+  .tb-name{color:var(--d-muted);font-size:13px;white-space:nowrap}
+  .btn{border:none;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer}
+  .btn-accent{background:var(--accent-soft);color:var(--accent-2)}
+  .btn-accent:hover{background:rgba(91,110,245,.26)}
+  .btn-red{background:rgba(248,113,113,.15);color:var(--red)}
+  .btn-red:hover{background:rgba(248,113,113,.25)}
+  .stat{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--d-muted);padding:6px 10px;border-radius:8px}
+  .stat .d{width:7px;height:7px;border-radius:50%;background:var(--green)}
+  .stat.paused .d{background:var(--amber)}
+
+  .list{flex:1;overflow:auto;padding:10px 12px}
+  .row{display:flex;gap:10px;background:var(--d-surface);border:1px solid transparent;border-radius:10px;padding:10px 12px;margin-bottom:7px;cursor:pointer;position:relative}
+  .row:hover{background:var(--d-hover)}
+  .row.sel{border-color:var(--accent);background:rgba(91,110,245,.10)}
+  .row .check{width:16px;height:16px;border-radius:5px;border:2px solid var(--d-muted);flex:0 0 16px;margin-top:2px}
+  .row.sel .check{background:var(--accent);border-color:var(--accent)}
+  .row .body{min-width:0;flex:1}
+  .row .txt{font-size:13.5px;color:var(--d-text);white-space:pre-wrap;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .row.done .txt{color:var(--d-muted);text-decoration:line-through}
+  .row .img{width:100%;max-height:96px;border-radius:7px;object-fit:contain;background:#0c0e13;margin-top:2px}
+  .row .meta{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11px;color:var(--d-muted)}
+  .row .meta .src{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .meta .ctag{color:var(--accent-2)}
+  .row .acts{position:absolute;top:8px;right:10px;display:none;gap:6px}
+  .row:hover .acts{display:flex}
+  .row .acts button{background:var(--d-surface-2);border:none;border-radius:7px;width:26px;height:26px;color:var(--d-text);cursor:pointer;font-size:13px}
+  .row .acts button:hover{background:#2c3242}
+  .row .acts .pin{color:var(--accent-2)}
+
+  /* 弹层 */
+  .overlay{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:5}
+  .modal{width:430px;max-height:86%;overflow:auto;background:var(--d-surface);border:1px solid var(--d-border);border-radius:14px;padding:18px 20px}
+  .modal h3{margin:0;font-size:15px;font-weight:600}
+  .modal .mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .modal .x{background:none;border:none;color:var(--d-muted);font-size:18px;cursor:pointer}
+  .field{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;font-size:13.5px}
+  .field .inp{background:var(--d-surface-2);border:1px solid var(--d-border);border-radius:8px;padding:6px 10px;color:var(--d-text);font-size:13px;width:170px;text-align:right}
+  .toggle{width:40px;height:23px;border-radius:999px;background:var(--d-surface-2);position:relative;cursor:pointer;transition:.15s;flex:0 0 40px}
+  .toggle.on{background:var(--accent)}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:.15s}
+  .toggle.on::after{left:19px}
+  .msep{border-top:1px solid var(--d-border);margin:14px 0;padding-top:12px}
+  .mhint{color:var(--d-muted);font-size:12px;margin:0 0 8px}
+  .qr{width:168px;height:168px;background:#fff;border-radius:10px;margin:14px auto;padding:10px;display:grid;grid-template-columns:repeat(25,1fr);grid-template-rows:repeat(25,1fr)}
+  .qr i{background:#0e1014}
+  .qr i.off{background:#fff}
+  .paired{display:flex;align-items:center;gap:10px;background:var(--d-surface-2);border-radius:10px;padding:11px 13px;margin-top:8px}
+  .paired .ph{width:34px;height:34px;border-radius:9px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;color:var(--accent-2)}
+  .paired .pn{font-size:13.5px;font-weight:600}
+  .paired .ps{font-size:11.5px;color:var(--d-muted)}
+
+  /* ============ 安卓端手机 ============ */
+  .phone{width:372px;height:790px;background:var(--a-bg);border-radius:38px;border:10px solid #15171f;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .statusbar{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:600;color:var(--a-text);flex:0 0 30px}
+  .statusbar .ic{display:flex;gap:5px;align-items:center}
+  .topbar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--a-surface)}
+  .topbar .ttl{font-size:18px;font-weight:700}
+  .topbar .sp{flex:1}
+  .topbar .ib{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--a-muted);background:none;border:none;cursor:pointer}
+  .topbar .ib:hover{background:var(--a-surface-2)}
+  .chips{display:flex;gap:8px;padding:8px 16px 4px;background:var(--a-surface);overflow-x:auto}
+  .chip{flex:0 0 auto;padding:7px 15px;border-radius:999px;background:var(--a-surface-2);color:var(--a-muted);font-size:13px;font-weight:600;cursor:pointer}
+  .chip.active{background:var(--accent);color:#fff}
+  .plist{flex:1;overflow:auto;padding:12px 14px 90px}
+  .pcard{background:var(--a-surface);border-radius:16px;padding:13px 14px;margin-bottom:11px;box-shadow:var(--a-shadow);cursor:pointer}
+  .pcard .pt{font-size:14px;color:var(--a-text);word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .pcard .pm{display:flex;gap:8px;margin-top:8px;font-size:11.5px;color:var(--a-muted);align-items:center}
+  .pcard .pm .src{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pcard .pimg{width:100%;border-radius:11px;margin-top:4px;max-height:150px;object-fit:cover;background:#e9ebf2}
+  .pcard .pcheck{width:20px;height:20px;border-radius:6px;border:2px solid var(--a-muted);flex:0 0 20px;margin-right:4px}
+  .pcard.todo{display:flex;align-items:flex-start;gap:10px}
+  .pcard.todo.done .pt{color:var(--a-muted);text-decoration:line-through}
+
+  .bottomnav{position:absolute;left:10px;right:10px;bottom:12px;height:64px;background:var(--a-surface);border-radius:22px;box-shadow:0 6px 22px rgba(20,24,40,.18);display:flex;align-items:center;padding:0 12px}
+  .bottomnav .bn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--a-muted);font-size:10.5px;background:none;border:none;cursor:pointer}
+  .bottomnav .bn.active{color:var(--accent)}
+  .fab{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);width:54px;height:54px;border-radius:18px;background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(91,110,245,.5);cursor:pointer;z-index:3}
+  .sheet-mask{position:absolute;inset:0;background:rgba(10,12,20,.4);display:flex;align-items:flex-end;z-index:8}
+  .sheet{background:var(--a-surface);width:100%;border-radius:24px 24px 28px 28px;padding:8px 16px 22px;animation:up .25s ease}
+  @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+  .sheet .grip{width:38px;height:4px;border-radius:999px;background:#d6d9e2;margin:8px auto 12px}
+  .sheet .prev{background:var(--a-surface-2);border-radius:12px;padding:11px;font-size:13px;color:var(--a-text);margin-bottom:12px;max-height:80px;overflow:hidden}
+  .sheet .act{display:flex;align-items:center;gap:14px;padding:13px 8px;font-size:15px;color:var(--a-text);border-bottom:1px solid var(--a-surface-2)}
+  .sheet .act:last-child{border-bottom:none}
+  .sheet .act .ai{width:22px;height:22px;color:var(--accent);display:flex;align-items:center;justify-content:center}
+  .sheet .act.danger{color:var(--red)}
+  .sheet .act.danger .ai{color:var(--red)}
+
+  .settings-list{flex:1;overflow:auto;padding:8px 14px 90px}
+  .sgroup{background:var(--a-surface);border-radius:16px;margin-bottom:14px;box-shadow:var(--a-shadow);overflow:hidden}
+  .srow{display:flex;align-items:center;gap:12px;padding:14px 15px;border-bottom:1px solid var(--a-surface-2);font-size:14.5px;color:var(--a-text)}
+  .srow:last-child{border-bottom:none}
+  .srow .si{width:22px;height:22px;color:var(--accent);flex:0 0 22px}
+  .srow .sv{margin-left:auto;color:var(--a-muted);font-size:13px}
+
+  .camera{position:absolute;inset:0;background:#0c0e13;z-index:9;display:flex;flex-direction:column}
+  .camera .cam-top{display:flex;align-items:center;gap:14px;padding:16px 18px;color:#fff}
+  .camera .cam-top .ib{color:#fff;background:none;border:none;font-size:20px;cursor:pointer}
+  .camera .cam-top .ct{font-size:16px;font-weight:600}
+  .viewfinder{flex:1;display:flex;align-items:center;justify-content:center}
+  .vf-box{width:240px;height:240px;position:relative;border-radius:14px}
+  .vf-box .corner{position:absolute;width:26px;height:26px;border:3px solid:var(--accent-2);border:none}
+  .vf-box .c1{top:-2px;left:-2px;border-top:3px solid var(--accent-2);border-left:3px solid var(--accent-2);border-top-left-radius:14px}
+  .vf-box .c2{top:-2px;right:-2px;border-top:3px solid var(--accent-2);border-right:3px solid var(--accent-2);border-top-right-radius:14px}
+  .vf-box .c3{bottom:-2px;left:-2px;border-bottom:3px solid var(--accent-2);border-left:3px solid var(--accent-2);border-bottom-left-radius:14px}
+  .vf-box .c4{bottom:-2px;right:-2px;border-bottom:3px solid var(--accent-2);border-right:3px solid var(--accent-2);border-bottom-right-radius:14px}
+  .scanline{position:absolute;left:8px;right:8px;height:3px;background:var(--accent-2);border-radius:3px;box-shadow:0 0 12px var(--accent-2);animation:scan 2.2s ease-in-out infinite}
+  @keyframes scan{0%,100%{top:8px}50%{top:226px}}
+  .camera .cam-tip{text-align:center;color:#cdd2e0;font-size:13px;padding:18px 30px 34px}
+
+  .legend{color:#9aa0b0;font-size:12.5px;margin-top:14px;text-align:center}
+  .ico{display:inline-block;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc-header">
+    <h1>Clip · 剪贴板管理器 — 设计稿</h1>
+    <p class="sub">桌面端（Electron + React）与安卓端（Kotlin + Compose）双端高保真界面设计</p>
+    <span class="pill">桌面 · 弹出式工具</span>
+    <span class="pill">安卓 · 分享入口</span>
+    <span class="pill">局域网端到端加密同步</span>
+    <span class="pill">Material 3 / 深色工具风</span>
+
+    <div class="notes">
+      <b>设计要点（沿用项目架构约束）</b>
+      <ul>
+        <li>左侧分类是<b>数据不是代码</b>：剪贴板 / 收藏 / 待办是三条预置记录，新建分类=插一行。</li>
+        <li>桌面端是<b>弹出式工具</b>：默认 <code>Alt+`</code> 唤起、<code>Esc</code> 收起；单击复制、条目上的「粘贴」按钮复制到剪贴板并收起（开启自动粘贴则粘贴回原窗口）、Ctrl+单击多选。双击不再粘贴，列表/待办条目双击进入编辑。</li>
+        <li>安卓端<b>不自动抓剪贴板</b>（系统限制）：入口是<b>系统分享菜单</b>和界面里的「+」，且永远是同步<b>客户端</b>。</li>
+        <li>条目类型：<b>文本 / 图片</b>；分类类型：<b>剪贴板(自动滚动淘汰) / 列表 / 待办</b>；同步策略：<b>不同步 / 手动推送 / 自动</b>。</li>
+        <li>强调色统一为品牌蓝紫 <code>#5b6ef5</code>，桌面端深色、安卓端浅色 Material 3，保证双端品牌一致。</li>
+      </ul>
+    </div>
+
+    <div class="tokens">
+      <div class="token"><div class="sw" style="background:var(--accent)"></div><div class="nm">accent</div><div class="vl">#5b6ef5</div></div>
+      <div class="token"><div class="sw" style="background:var(--d-bg)"></div><div class="nm">桌面背景</div><div class="vl">#0e1014</div></div>
+      <div class="token"><div class="sw" style="background:var(--d-surface)"></div><div class="nm">桌面卡片</div><div class="vl">#161922</div></div>
+      <div class="token"><div class="sw" style="background:var(--green)"></div><div class="nm">在线/绿</div><div class="vl">#34d399</div></div>
+      <div class="token"><div class="sw" style="background:var(--amber)"></div><div class="nm">暂停/黄</div><div class="vl">#fbbf24</div></div>
+      <div class="token"><div class="sw" style="background:var(--red)"></div><div class="nm">危险/红</div><div class="vl">#f87171</div></div>
+      <div class="token"><div class="sw" style="background:var(--a-surface)"></div><div class="nm">安卓表面</div><div class="vl">#ffffff</div></div>
+      <div class="token"><div class="sw" style="background:var(--a-bg)"></div><div class="nm">安卓背景</div><div class="vl">#f5f6fb</div></div>
+    </div>
+  </header>
+
+  <!-- ================= 桌面端 ================= -->
+  <section class="platform">
+    <h2>桌面端 <span class="tag">Electron · 深色</span></h2>
+    <p class="desc">弹出式剪贴板工具：左侧分类导航 + 中间条目列表，支持搜索、多选批量操作、推送到手机、设置与配对弹层。</p>
+    <div class="tabs" data-target="desktop">
+      <div class="tab active" data-screen="d-main">主界面 · 剪贴板</div>
+      <div class="tab" data-screen="d-todo">待办分类</div>
+      <div class="tab" data-screen="d-search">全局搜索</div>
+      <div class="tab" data-screen="d-multi">多选 / 批量</div>
+      <div class="tab" data-screen="d-settings">设置弹层</div>
+      <div class="tab" data-screen="d-pair">手机配对</div>
+    </div>
+    <div class="stage" id="desktop">
+
+      <!-- 主界面 -->
+      <div class="screen active" data-screen="d-main">
+        <div class="win" style="position:relative">
+          <div class="titlebar">
+            <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+            <span class="t">Clip — 剪贴板历史</span>
+            <span class="hk">Alt+` 唤起</span>
+          </div>
+          <div class="win-body">
+            <aside class="sidebar">
+              <div class="brand"><div class="logo">C</div><div><div class="nm">Clip</div><div class="dv">周璇的电脑</div></div></div>
+              <div class="nav">
+                <div class="nav-item active">
+                  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                  剪贴板<span class="badge">128</span></div>
+                <div class="nav-item">
+                  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>
+                  收藏<span class="badge">23</span></div>
+                <div class="nav-item">
+                  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                  待办事项<span class="badge">5</span></div>
+                <div class="nav-item">
+                  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+                  提示词<span class="badge">12</span></div>
+                <div class="nav-item">
+                  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+                  链接<span class="badge">47</span></div>
+                <div class="nav-new">+ 新建分类</div>
+              </div>
+              <div class="side-foot">
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M4 12h16M4 12l4-4M4 12l4 4"/><path d="M20 12l-4-4M20 12l-4 4" opacity=".4"/></svg>传输</button>
+                <button><span class="on-dot"></span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>手机</button>
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 2.6V2.5a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.6 1.6 0 0 0 21.4 10h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.6 1.6z"/></svg>设置</button>
+              </div>
+            </aside>
+            <main class="main">
+              <div class="toolbar">
+                <div class="search">
+                  <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+                  <input placeholder="搜索全部分类…" />
+                </div>
+                <span class="tb-name">剪贴板</span>
+                <div class="stat"><span class="d"></span>记录中</div>
+              </div>
+              <div class="list">
+                <div class="row">
+                  <div class="body">
+                    <div class="txt">https://react.dev/learn — Thinking in React 这节讲组件拆分很到位，明天写周报引用一下</div>
+                    <div class="meta"><span>14:22</span><span>1.2 KB</span><span class="src">Chrome</span></div>
+                  </div>
+                  <div class="acts"><button class="pin" title="置顶">★</button><button title="复制到">→</button><button title="删除">×</button></div>
+                </div>
+                <div class="row">
+                  <div class="body">
+                    <img class="img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='120'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%235b6ef5'/><stop offset='1' stop-color='%237c8bff'/></linearGradient></defs><rect width='400' height='120' fill='url(%23g)'/><circle cx='90' cy='60' r='34' fill='rgba(255,255,255,.25)'/><rect x='150' y='42' width='200' height='12' rx='6' fill='rgba(255,255,255,.6)'/><rect x='150' y='66' width='140' height='10' rx='5' fill='rgba(255,255,255,.4)'/></svg>" />
+                    <div class="meta"><span>14:18</span><span>1280×720</span><span class="src">Snipaste</span></div>
+                  </div>
+                  <div class="acts"><button class="pin" title="置顶">★</button><button title="复制到">→</button><button title="删除">×</button></div>
+                </div>
+                <div class="row">
+                  <div class="body">
+                    <div class="txt">周末爬山集合点改到西大门，9 点准时，记得带水和防晒</div>
+                    <div class="meta"><span>14:05</span><span>86 B</span><span class="src">微信</span></div>
+                  </div>
+                  <div class="acts"><button class="pin" title="置顶">★</button><button title="复制到">→</button><button title="删除">×</button></div>
+                </div>
+                <div class="row">
+                  <div class="body">
+                    <div class="txt">npm run build:win</div>
+                    <div class="meta"><span>13:47</span><span>58 B</span><span class="src">终端</span></div>
+                  </div>
+                  <div class="acts"><button class="pin" title="置顶">★</button><button title="复制到">→</button><button title="删除">×</button></div>
+                </div>
+                <div class="row">
+                  <div class="body">
+                    <div class="txt">记得给客户报价单加上 13% 增值税，邮件主题写清楚项目编号</div>
+                    <div class="meta"><span>13:30</span><span>120 B</span><span class="src">微信</span></div>
+                  </div>
+                  <div class="acts"><button class="pin" title="置顶">★</button><button title="复制到">→</button><button title="删除">×</button></div>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <div class="legend">默认落地「剪贴板」分类：图文混排，hover 行尾出现 置顶 ★ / 复制到 → / 删除 ×；底部「手机」显示在线绿点。</div>
+      </div>
+
+      <!-- 待办 -->
+      <div class="screen" data-screen="d-todo">
+        <div class="win" style="position:relative">
+          <div class="titlebar">
+            <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+            <span class="t">Clip — 待办事项</span><span class="hk">Alt+` 唤起</span>
+          </div>
+          <div class="win-body">
+            <aside class="sidebar">
+              <div class="brand"><div class="logo">C</div><div><div class="nm">Clip</div><div class="dv">周璇的电脑</div></div></div>
+              <div class="nav">
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板<span class="badge">128</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏<span class="badge">23</span></div>
+                <div class="nav-item active"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办事项<span class="badge">5</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>提示词<span class="badge">12</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>链接<span class="badge">47</span></div>
+                <div class="nav-new">+ 新建分类</div>
+              </div>
+              <div class="side-foot">
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M4 12h16M4 12l4-4M4 12l4 4"/></svg>传输</button>
+                <button><span class="on-dot"></span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>手机</button>
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5h-.1a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-.3-1.8 1.6 1.6 0 0 0-1.4-1H2.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.6z"/></svg>设置</button>
+              </div>
+            </aside>
+            <main class="main">
+              <div class="toolbar">
+                <div class="search"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg><input placeholder="搜索全部分类…" /></div>
+                <span class="tb-name">待办事项</span>
+                <div class="stat"><span class="d"></span>记录中</div>
+              </div>
+              <div class="list">
+                <div class="row done"><div class="check" style="border-radius:5px;background:var(--accent);border-color:var(--accent)">✓</div><div class="body"><div class="txt">交 8 月物业费</div><div class="meta"><span>已完成</span><span>昨天</span></div></div></div>
+                <div class="row"><div class="check"></div><div class="body"><div class="txt">回复导师邮件：确认开题报告时间</div><div class="meta"><span>待办</span><span>来自 周璇的手机</span></div></div></div>
+                <div class="row"><div class="check"></div><div class="body"><div class="txt">给猫买冻干（上次那款牛肉味）</div><div class="meta"><span>待办</span><span>来自 周璇的手机</span></div></div></div>
+                <div class="row"><div class="check"></div><div class="body"><div class="txt">预约驾照换证体检</div><div class="meta"><span>待办</span><span>09:12</span></div></div></div>
+                <div class="row"><div class="check"></div><div class="body"><div class="txt">把本周剪贴板整理进笔记</div><div class="meta"><span>待办</span><span>09:10</span></div></div></div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <div class="legend">待办分类：每条左侧勾选框，完成的条目置灰删除线；手机端新建的待办会标注来源设备。</div>
+      </div>
+
+      <!-- 搜索 -->
+      <div class="screen" data-screen="d-search">
+        <div class="win" style="position:relative">
+          <div class="titlebar">
+            <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+            <span class="t">Clip — 搜索</span><span class="hk">Alt+` 唤起</span>
+          </div>
+          <div class="win-body">
+            <aside class="sidebar">
+              <div class="brand"><div class="logo">C</div><div><div class="nm">Clip</div><div class="dv">周璇的电脑</div></div></div>
+              <div class="nav">
+                <div class="nav-item active"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板<span class="badge">128</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏<span class="badge">23</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办事项<span class="badge">5</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>提示词<span class="badge">12</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>链接<span class="badge">47</span></div>
+                <div class="nav-new">+ 新建分类</div>
+              </div>
+              <div class="side-foot">
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M4 12h16M4 12l4-4M4 12l4 4"/></svg>传输</button>
+                <button><span class="on-dot"></span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>手机</button>
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5h-.1a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-.3-1.8 1.6 1.6 0 0 0-1.4-1H2.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.6z"/></svg>设置</button>
+              </div>
+            </aside>
+            <main class="main">
+              <div class="toolbar">
+                <div class="search"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg><input value="react" /></div>
+                <div class="stat"><span class="d"></span>记录中</div>
+              </div>
+              <div class="list">
+                <div class="row"><div class="body"><div class="txt">https://react.dev/learn — Thinking in React 这节讲组件拆分很到位</div><div class="meta"><span>14:22</span><span class="ctag">链接</span><span class="src">Chrome</span></div></div></div>
+                <div class="row"><div class="body"><div class="txt">React 受控组件 vs 非受控组件 笔记草稿</div><div class="meta"><span>周三</span><span class="ctag">提示词</span></div></div></div>
+                <div class="row"><div class="body"><div class="txt">用 React + Electron 做剪贴板工具的心得</div><div class="meta"><span>周一</span><span class="ctag">收藏</span></div></div></div>
+                <div class="row"><div class="body"><div class="txt">react-icons 安装命令：npm i react-icons</div><div class="meta"><span>上周</span><span class="ctag">提示词</span><span class="src">终端</span></div></div></div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <div class="legend">全局搜索：跨所有分类命中，每条用彩色标签显示所属分类；搜索态下隐藏当前分类名，改为显示命中来源。</div>
+      </div>
+
+      <!-- 多选 -->
+      <div class="screen" data-screen="d-multi">
+        <div class="win" style="position:relative">
+          <div class="titlebar">
+            <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+            <span class="t">Clip — 剪贴板历史</span><span class="hk">Ctrl+单击 多选</span>
+          </div>
+          <div class="win-body">
+            <aside class="sidebar">
+              <div class="brand"><div class="logo">C</div><div><div class="nm">Clip</div><div class="dv">周璇的电脑</div></div></div>
+              <div class="nav">
+                <div class="nav-item active"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板<span class="badge">128</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏<span class="badge">23</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办事项<span class="badge">5</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>提示词<span class="badge">12</span></div>
+                <div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>链接<span class="badge">47</span></div>
+                <div class="nav-new">+ 新建分类</div>
+              </div>
+              <div class="side-foot">
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M4 12h16M4 12l4-4M4 12l4 4"/></svg>传输</button>
+                <button><span class="on-dot"></span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>手机</button>
+                <button><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5h-.1a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-.3-1.8 1.6 1.6 0 0 0-1.4-1H2.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.6z"/></svg>设置</button>
+              </div>
+            </aside>
+            <main class="main">
+              <div class="toolbar">
+                <div class="search"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg><input placeholder="搜索全部分类…" /></div>
+                <button class="btn btn-accent">推送到手机 2 项</button>
+                <button class="btn btn-red">删除 2 项</button>
+                <div class="stat"><span class="d"></span>记录中</div>
+              </div>
+              <div class="list">
+                <div class="row sel"><div class="check"></div><div class="body"><div class="txt">https://react.dev/learn — Thinking in React 这节讲组件拆分很到位，明天写周报引用一下</div><div class="meta"><span>14:22</span><span>1.2 KB</span><span class="src">Chrome</span></div></div></div>
+                <div class="row"><div class="body"><img class="img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='120'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%235b6ef5'/><stop offset='1' stop-color='%237c8bff'/></linearGradient></defs><rect width='400' height='120' fill='url(%23g)'/><circle cx='90' cy='60' r='34' fill='rgba(255,255,255,.25)'/><rect x='150' y='42' width='200' height='12' rx='6' fill='rgba(255,255,255,.6)'/><rect x='150' y='66' width='140' height='10' rx='5' fill='rgba(255,255,255,.4)'/></svg>" /><div class="meta"><span>14:18</span><span>1280×720</span><span class="src">Snipaste</span></div></div></div>
+                <div class="row sel"><div class="check"></div><div class="body"><div class="txt">周末爬山集合点改到西大门，9 点准时，记得带水和防晒</div><div class="meta"><span>14:05</span><span>86 B</span><span class="src">微信</span></div></div></div>
+                <div class="row"><div class="body"><div class="txt">npm run build:win</div><div class="meta"><span>13:47</span><span>58 B</span><span class="src">终端</span></div></div></div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <div class="legend">多选态：选中条目变蓝边 + 勾选框，工具栏出现「推送到手机 N 项」「删除 N 项」；需有在线设备时才显示推送按钮。</div>
+      </div>
+
+      <!-- 设置弹层 -->
+      <div class="screen" data-screen="d-settings">
+        <div class="win" style="position:relative">
+          <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">Clip</span><span class="hk">Alt+` 唤起</span></div>
+          <div class="win-body">
+            <aside class="sidebar"><div class="brand"><div class="logo">C</div><div><div class="nm">Clip</div><div class="dv">周璇的电脑</div></div></div><div class="nav"><div class="nav-item active"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板<span class="badge">128</span></div><div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏<span class="badge">23</span></div><div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办事项<span class="badge">5</span></div><div class="nav-new">+ 新建分类</div></div><div class="side-foot"><button>传输</button><button><span class="on-dot"></span>手机</button><button>设置</button></div></aside>
+            <main class="main"></main>
+          </div>
+          <div class="overlay">
+            <div class="modal">
+              <div class="mh"><h3>设置</h3><button class="x">×</button></div>
+              <div class="field"><span>唤起热键</span><input class="inp" value="Alt+`" /></div>
+              <div class="field"><span>选中后自动粘贴到原窗口</span><div class="toggle on"></div></div>
+              <div class="field"><span>开机自启</span><div class="toggle"></div></div>
+              <div class="field"><span>暂停记录剪贴板</span><div class="toggle"></div></div>
+              <div class="msep">
+                <p class="mhint">各分类保留条数（0 = 不限）</p>
+                <div class="field"><span>剪贴板</span><input class="inp" value="500" /></div>
+                <div class="field"><span>收藏</span><input class="inp" value="0" /></div>
+                <div class="field"><span>待办事项</span><input class="inp" value="0" /></div>
+                <div class="field"><span>提示词</span><input class="inp" value="0" /></div>
+                <div class="field"><span>链接</span><input class="inp" value="0" /></div>
+              </div>
+              <div class="msep">
+                <p class="mhint">手机发来的文件存到</p>
+                <div class="field"><span style="font-size:12px;color:var(--d-muted)">下载/Clip（默认）</span><button class="btn btn-accent" style="padding:5px 12px">更改</button></div>
+              </div>
+              <div class="mhint" style="margin-top:10px">本机设备名：周璇的电脑</div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">设置弹层（居中 430px）：热键、自动粘贴、自启、暂停记录，以及各分类条数上限（剪贴板默认 500 滚动淘汰）。</div>
+      </div>
+
+      <!-- 手机配对 -->
+      <div class="screen" data-screen="d-pair">
+        <div class="win" style="position:relative">
+          <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">Clip</span><span class="hk">Alt+` 唤起</span></div>
+          <div class="win-body">
+            <aside class="sidebar"><div class="brand"><div class="logo">C</div><div><div class="nm">Clip</div><div class="dv">周璇的电脑</div></div></div><div class="nav"><div class="nav-item active"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板<span class="badge">128</span></div><div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏<span class="badge">23</span></div><div class="nav-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办事项<span class="badge">5</span></div><div class="nav-new">+ 新建分类</div></div><div class="side-foot"><button>传输</button><button><span class="on-dot"></span>手机</button><button>设置</button></div></aside>
+            <main class="main"></main>
+          </div>
+          <div class="overlay">
+            <div class="modal">
+              <div class="mh"><h3>手机同步</h3><button class="x">×</button></div>
+              <div class="field"><span>局域网同步服务</span><div class="toggle on"></div></div>
+              <p class="mhint">开启后，用手机端扫码即可配对。同一局域网下自动同步。</p>
+              <div class="qr" id="qr-desktop"></div>
+              <button class="btn btn-accent" style="width:100%;padding:9px">配对新手机</button>
+              <div class="msep">
+                <p class="mhint">已配对设备</p>
+                <div class="paired">
+                  <div class="ph"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
+                  <div style="flex:1"><div class="pn">周璇的手机</div><div class="ps">在线 · 2 分钟前同步</div></div>
+                  <span class="d" style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">手机配对弹层：开启局域网服务 → 显示一次性二维码（含 32 字节配对码，3 分钟过期）→ 手机扫码；已配对设备显示在线状态。</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================= 安卓端 ================= -->
+  <section class="platform">
+    <h2>安卓端 <span class="tag">Compose · Material 3 浅色</span></h2>
+    <p class="desc">手机不自动抓剪贴板，入口是系统分享菜单和「+」；永远是同步客户端，通过扫码与电脑配对。底部导航 + FAB 新建。</p>
+    <div class="tabs" data-target="android">
+      <div class="tab active" data-screen="a-main">主界面 · 剪贴板</div>
+      <div class="tab" data-screen="a-fav">收藏分类</div>
+      <div class="tab" data-screen="a-sheet">条目操作</div>
+      <div class="tab" data-screen="a-settings">设置 / 配对</div>
+      <div class="tab" data-screen="a-scan">扫码配对</div>
+      <div class="tab" data-screen="a-share">接收分享</div>
+    </div>
+    <div class="stage phone-stage" id="android">
+
+      <!-- 主界面 -->
+      <div class="screen active" data-screen="a-main">
+        <div class="phone">
+          <div class="statusbar"><span>14:30</span><span class="ic">●●● &nbsp; 5G &nbsp; ▱100%</span></div>
+          <div class="topbar"><span class="ttl">剪贴板</span><span class="sp"></span>
+            <button class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg></button>
+            <button class="ib"><svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+          </div>
+          <div class="chips"><div class="chip active">剪贴板</div><div class="chip">收藏</div><div class="chip">待办</div><div class="chip">链接</div></div>
+          <div class="plist">
+            <div class="pcard"><div class="pt">https://react.dev/learn — Thinking in React 这节讲组件拆分很到位</div><div class="pm"><span>14:22</span><span class="src">Chrome</span></div></div>
+            <div class="pcard"><img class="pimg" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='150'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%235b6ef5'/><stop offset='1' stop-color='%237c8bff'/></linearGradient></defs><rect width='320' height='150' fill='url(%23g)'/><circle cx='70' cy='75' r='28' fill='rgba(255,255,255,.25)'/><rect x='120' y='55' width='160' height='12' rx='6' fill='rgba(255,255,255,.6)'/><rect x='120' y='80' width='110' height='10' rx='5' fill='rgba(255,255,255,.4)'/></svg>" /><div class="pm"><span>14:18</span><span class="src">Snipaste</span></div></div>
+            <div class="pcard"><div class="pt">周末爬山集合点改到西大门，9 点准时，记得带水和防晒</div><div class="pm"><span>14:05</span><span class="src">微信</span></div></div>
+            <div class="pcard"><div class="pt">npm run build:win</div><div class="pm"><span>13:47</span><span class="src">终端</span></div></div>
+          </div>
+          <button class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="width:24px;height:24px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          <div class="bottomnav">
+            <button class="bn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏</button>
+            <button class="bn" style="visibility:hidden">·</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5h-.1a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-.3-1.8 1.6 1.6 0 0 0-1.4-1H2.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.6z"/></svg>设置</button>
+          </div>
+        </div>
+        <div class="legend">主界面：顶部搜索 + 分类 chips + 条目卡片；底部导航（剪贴板/收藏/待办/设置）+ 中间 FAB「+」新建/手动添加。</div>
+      </div>
+
+      <!-- 收藏 -->
+      <div class="screen" data-screen="a-fav">
+        <div class="phone">
+          <div class="statusbar"><span>14:30</span><span class="ic">●●● &nbsp; 5G &nbsp; ▱100%</span></div>
+          <div class="topbar"><span class="ttl">收藏</span><span class="sp"></span>
+            <button class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg></button>
+            <button class="ib"><svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+          </div>
+          <div class="chips"><div class="chip">剪贴板</div><div class="chip active">收藏</div><div class="chip">待办</div><div class="chip">链接</div></div>
+          <div class="plist">
+            <div class="pcard"><div class="pt">用 React + Electron 做剪贴板工具的心得：主进程监听系统剪贴板，渲染进程只管 UI</div><div class="pm"><span>周一</span><span>来自 周璇的电脑</span></div></div>
+            <div class="pcard"><div class="pt">「焦虑的反义词是具体」——记给自己的提醒</div><div class="pm"><span>周日</span><span>来自 周璇的电脑</span></div></div>
+            <div class="pcard"><img class="pimg" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='150'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%237c8bff'/><stop offset='1' stop-color='%235b6ef5'/></linearGradient></defs><rect width='320' height='150' fill='url(%23g)'/><rect x='40' y='40' width='240' height='70' rx='10' fill='rgba(255,255,255,.3)'/></svg>" /><div class="pm"><span>上周</span><span>来自 周璇的电脑</span></div></div>
+            <div class="pcard"><div class="pt">书单：①深度工作 ②置身事内 ③置身事内（重读）</div><div class="pm"><span>上周</span></div></div>
+          </div>
+          <button class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="width:24px;height:24px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          <div class="bottomnav">
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板</button>
+            <button class="bn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏</button>
+            <button class="bn" style="visibility:hidden">·</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5h-.1a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-.3-1.8 1.6 1.6 0 0 0-1.4-1H2.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.6z"/></svg>设置</button>
+          </div>
+        </div>
+        <div class="legend">收藏分类：来自电脑同步的内容会标注「来自 周璇的电脑」，体现端到端加密同步的来源可见性。</div>
+      </div>
+
+      <!-- 条目操作 sheet -->
+      <div class="screen" data-screen="a-sheet">
+        <div class="phone">
+          <div class="statusbar"><span>14:30</span><span class="ic">●●● &nbsp; 5G &nbsp; ▱100%</span></div>
+          <div class="topbar"><span class="ttl">剪贴板</span><span class="sp"></span><button class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg></button><button class="ib"><svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
+          <div class="chips"><div class="chip active">剪贴板</div><div class="chip">收藏</div><div class="chip">待办</div><div class="chip">链接</div></div>
+          <div class="plist">
+            <div class="pcard"><div class="pt">https://react.dev/learn — Thinking in React 这节讲组件拆分很到位</div><div class="pm"><span>14:22</span><span class="src">Chrome</span></div></div>
+            <div class="pcard"><div class="pt">周末爬山集合点改到西大门，9 点准时，记得带水和防晒</div><div class="pm"><span>14:05</span><span class="src">微信</span></div></div>
+          </div>
+          <button class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="width:24px;height:24px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          <div class="bottomnav">
+            <button class="bn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>剪贴板</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏</button>
+            <button class="bn" style="visibility:hidden">·</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办</button>
+            <button class="bn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5h-.1a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-.3-1.8 1.6 1.6 0 0 0-1.4-1H2.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.6z"/></svg>设置</button>
+          </div>
+          <div class="sheet-mask">
+            <div class="sheet">
+              <div class="grip"></div>
+              <div class="prev">周末爬山集合点改到西大门，9 点准时，记得带水和防晒</div>
+              <div class="act"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>复制</div>
+              <div class="act"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M4 12h12M4 12l4-4M4 12l4 4"/><path d="M20 12l-4-4M20 12l-4 4" opacity=".4"/></svg></span>推送到电脑</div>
+              <div class="act"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M12 2l3 7 7 .5-5.3 4.6L18 21l-6-3.6L6 21l1.3-6.9L2 9.5 9 9z"/></svg></span>置顶</div>
+              <div class="act"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>复制到分类…</div>
+              <div class="act danger"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></span>删除</div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">长按条目弹出操作底部菜单：复制（写入系统剪贴板）、推送到电脑、置顶、复制到分类、删除。手机侧可主动回推到电脑。</div>
+      </div>
+
+      <!-- 设置 / 配对 -->
+      <div class="screen" data-screen="a-settings">
+        <div class="phone">
+          <div class="statusbar"><span>14:30</span><span class="ic">●●● &nbsp; 5G &nbsp; ▱100%</span></div>
+          <div class="topbar"><button class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M15 18l-6-6 6-6"/></svg></button><span class="ttl">设置</span><span class="sp"></span></div>
+          <div class="settings-list">
+            <div class="sgroup">
+              <div class="srow"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>设备名称<span class="sv">周璇的手机</span></div>
+              <div class="srow"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h12M4 12l4-4M4 12l4 4"/><path d="M20 12l-4-4M20 12l-4 4" opacity=".4"/></svg>局域网同步<span class="sv" style="color:var(--green);font-weight:600">已开启</span></div>
+              <div class="srow"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-6v14L3 13z"/><path d="M11 11v8"/></svg>扫码配对<span class="sv">去配对 ›</span></div>
+            </div>
+            <div class="sgroup">
+              <div class="srow"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>已配对<span class="sv">周璇的电脑 · 在线</span></div>
+              <div class="srow"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17.3 6.2 21l1.6-6.6L2 9.3l6.7-.6L12 2.5l3.3 6.2 6.7.6-5.8 5.1L17.8 21z"/></svg>收藏自动同步<span class="sv">手动</span></div>
+            </div>
+            <div class="sgroup">
+              <div class="srow"><svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>关于 Clip<span class="sv">v1.0.0</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">设置页：设备名、局域网同步开关、扫码配对入口、已配对电脑状态、各分类同步策略；手机永远是客户端。</div>
+      </div>
+
+      <!-- 扫码配对 -->
+      <div class="screen" data-screen="a-scan">
+        <div class="phone">
+          <div class="camera">
+            <div class="cam-top"><button class="ib">×</button><span class="ct">扫码配对</span><span style="width:24px"></span></div>
+            <div class="viewfinder">
+              <div class="vf-box">
+                <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+                <div class="scanline"></div>
+              </div>
+            </div>
+            <div class="cam-tip">将手机摄像头对准电脑端「手机同步」里的二维码<br/>配对码一次性有效，3 分钟内完成</div>
+          </div>
+        </div>
+        <div class="legend">扫码配对：相机取景框 + 扫描动画；配对成功后写入长期会话密钥，之后所有传输走 AES-256-GCM 加密帧。</div>
+      </div>
+
+      <!-- 接收分享 -->
+      <div class="screen" data-screen="a-share">
+        <div class="phone">
+          <div class="statusbar"><span>14:30</span><span class="ic">●●● &nbsp; 5G &nbsp; ▱100%</span></div>
+          <div class="topbar"><span class="ttl">保存到 Clip</span><span class="sp"></span><button class="ib" style="color:var(--accent);font-weight:600;font-size:14px">保存</button></div>
+          <div class="plist">
+            <div class="pcard" style="border:2px solid var(--accent)"><div class="pt">一段从浏览器分享过来的链接：https://kotlinlang.org/docs/compose.html</div><div class="pm"><span>刚刚</span><span class="src">来自 系统分享</span></div></div>
+            <p class="mhint" style="color:var(--a-muted);font-size:13px;padding:4px 4px 8px">保存到分类</p>
+            <div class="pcard" style="display:flex;align-items:center;gap:12px"><span class="chip active" style="margin:0">剪贴板</span><span style="color:var(--a-muted);font-size:13px">默认，自动记录</span></div>
+            <div class="pcard" style="display:flex;align-items:center;gap:12px"><span class="chip" style="margin:0;background:var(--a-surface-2);color:var(--a-muted)">收藏</span><span style="color:var(--a-muted);font-size:13px">长期保存</span></div>
+            <div class="pcard" style="display:flex;align-items:center;gap:12px"><span class="chip" style="margin:0;background:var(--a-surface-2);color:var(--a-muted)">链接</span><span style="color:var(--a-muted);font-size:13px">网址归档</span></div>
+          </div>
+        </div>
+        <div class="legend">接收分享：从系统分享菜单选择 Clip → 预览内容 → 选择目标分类后保存。这是安卓端捕获内容的主入口之一（另一个是「+」）。</div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // tab 切换
+  document.querySelectorAll('.tabs').forEach(function(tabs){
+    var target = tabs.getAttribute('data-target');
+    var stage = document.getElementById(target);
+    tabs.querySelectorAll('.tab').forEach(function(tab){
+      tab.addEventListener('click', function(){
+        tabs.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+        tab.classList.add('active');
+        var name = tab.getAttribute('data-screen');
+        stage.querySelectorAll('.screen').forEach(function(s){
+          s.classList.toggle('active', s.getAttribute('data-screen')===name);
+        });
+      });
+    });
+  });
+
+  // 仿真二维码（确定性伪随机，保证渲染稳定）
+  function buildQR(el, seed){
+    if(!el) return;
+    var cells = 25, v=seed||7;
+    function rnd(){ v = (v*1103515245 + 12345) & 0x7fffffff; return v/0x7fffffff; }
+    // 三个定位角
+    function isFinder(r,c){
+      function inBox(br,bc){ return r>=br && r<br+7 && c>=bc && c<bc+7; }
+      return inBox(0,0) || inBox(0,cells-7) || inBox(cells-7,0);
+    }
+    for(var r=0;r<cells;r++){
+      for(var c=0;c<cells;c++){
+        var i=document.createElement('i');
+        var on;
+        if(isFinder(r,c)){
+          // 定位角实心外框 + 中心块
+          var lr = r%7, lc = c%7;
+          var br = (r<7)?0:(r>cells/2?cells-7:0);
+          var bc = (c<7)?0:(c>cells/2?cells-7:0);
+          var rr=r-br, cc=c-bc;
+          on = (rr===0||rr===6||cc===0||cc===6) || (rr>=2&&rr<=4&&cc>=2&&cc<=4);
+        } else {
+          on = rnd() > 0.52;
+        }
+        if(!on) i.className='off';
+        el.appendChild(i);
+      }
+    }
+  }
+  buildQR(document.getElementById('qr-desktop'), 11);
+</script>
+</body>
+</html>

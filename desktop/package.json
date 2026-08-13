@@ -1,0 +1,48 @@
+{
+  "name": "clip",
+  "version": "0.1.0",
+  "description": "桌面剪贴板管理器，支持自定义分类与安卓端同步",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "private": true,
+  "author": "zhouxuan",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "npm run typecheck && electron-vite build",
+    "build:win": "set \"ELECTRON_MIRROR=https://cdn.npmmirror.com/binaries/electron/\" && npm run build && electron-builder --win --config electron-builder.yml",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "koffi": "^3.1.4",
+    "qrcode": "^1.5.4",
+    "robotjs": "^0.9.1",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.7",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "virtua": "^0.50.1",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10",
+    "zustand": "^5.0.14"
+  }
+}
