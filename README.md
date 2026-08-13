@@ -3,6 +3,8 @@
 电脑端自动记录剪贴板历史，支持自定义分类、待办、收藏；
 手机端通过局域网与电脑同步，内容端到端加密。
 
+> 💼 **商用 / 闭源使用需单独授权**：个人使用免费且开源（GPLv3），但若你想在 GPL 义务之外闭源商用，须向版权人取得单独的商业授权 → 见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) 或联系 930130007@qq.com
+
 ## 在电脑上跑起来
 
 只需要 Node.js（>= 22），**不需要装 Visual Studio Build Tools**——
